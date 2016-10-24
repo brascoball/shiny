@@ -1,4 +1,4 @@
-shiny 0.14.1.9001
+shiny 0.14.1.9002
 ============
 
 ## Full changelog
@@ -8,6 +8,8 @@ shiny 0.14.1.9001
 * Added a `fade` argument to `modalDialog()` -- setting it to `FALSE` will remove the usual fade-in animation for that modal window. ([#1414](https://github.com/rstudio/shiny/pull/1414))
 
 * Exported function to apply input handlers to input values. This can be used for testing Shiny applications. ([#1421](https://github.com/rstudio/shiny/pull/1421))
+
+* Added `onTestSnapshot()` function, which allows a test driver to query the session for values internal to an application's server function. This only has an effect if the `shiny.testing` option is set to `TRUE`. ([#1436](https://github.com/rstudio/shiny/pull/1436))
 
 ### Bug fixes
 
