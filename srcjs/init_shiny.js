@@ -82,19 +82,28 @@ function initShiny() {
   var inputsRate = new InputRateDecorator(inputsEvent);
   var inputsDefer = new InputDeferDecorator(inputsEvent);
 
-  // By default, use rate decorator
-  var inputs = inputsRate;
-  $('input[type="submit"], button[type="submit"]').each(function() {
+  var inputs;
+  if ($('input[type="submit"], button[type="submit"]').length > 0) {
     // If there is a submit button on the page, use defer decorator
     inputs = inputsDefer;
-    $(this).click(function(event) {
-      event.preventDefault();
-      inputsDefer.submit();
-    });
-  });
 
-  exports.onInputChange = function(name, value) {
-    inputs.setInput(name, value);
+    $('input[type="submit"], button[type="submit"]').each(function() {
+      $(this).click(function(event) {
+        event.preventDefault();
+        inputsDefer.submit();
+      });
+    });
+
+  } else {
+    // By default, use rate decorator
+    inputs = inputsRate;
+  }
+
+  inputs = new InputValidateDecorator(inputs);
+
+  exports.onInputChange = function(name, value, opts) {
+    opts = addDefaultInputOpts(opts);
+    inputs.setInput(name, value, opts);
   };
 
   var boundInputs = {};
@@ -106,14 +115,16 @@ function initShiny() {
       var type = binding.getType(el);
       if (type)
         id = id + ":" + type;
-      inputs.setInput(id, value, !allowDeferred);
+
+      let opts = { immediate: !allowDeferred, binding: binding, el: el };
+      inputs.setInput(id, value, opts);
     }
   }
 
   function bindInputs(scope = document) {
     var bindings = inputBindings.getBindings();
 
-    var currentValues = {};
+    var inputItems = {};
 
     for (var i = 0; i < bindings.length; i++) {
       var binding = bindings[i].binding;
@@ -128,7 +139,14 @@ function initShiny() {
 
         var type = binding.getType(el);
         var effectiveId = type ? id + ":" + type : id;
-        currentValues[effectiveId] = binding.getValue(el);
+        inputItems[effectiveId] = {
+          value: binding.getValue(el),
+          opts: {
+            immediate: true,
+            binding: binding,
+            el: el
+          }
+        };
 
         /*jshint loopfunc:true*/
         var thisCallback = (function() {
@@ -160,14 +178,10 @@ function initShiny() {
           binding: binding,
           bindingType: 'input'
         });
-
-        if (shinyapp.isConnected()) {
-          valueChangeCallback(binding, el, false);
-        }
       }
     }
 
-    return currentValues;
+    return inputItems;
   }
 
   function unbindInputs(scope = document, includeSelf = false) {
@@ -203,12 +217,11 @@ function initShiny() {
     unbindOutputs(scope, includeSelf);
   }
   exports.bindAll = function(scope) {
-    // _bindAll alone returns initial values, it doesn't send them to the
-    // server. export.bindAll needs to send the values to the server, so we
-    // wrap _bindAll in a closure that does that.
-    var currentValues = _bindAll(scope);
-    $.each(currentValues, function(name, value) {
-      inputs.setInput(name, value);
+    // _bindAll returns input values; it doesn't send them to the server.
+    // export.bindAll needs to send the values to the server.
+    var currentInputItems = _bindAll(scope);
+    $.each(currentInputItems, function(name, item) {
+      inputs.setInput(name, item.value, item.opts);
     });
 
     // Not sure if the iframe stuff is an intrinsic part of bindAll, but bindAll
@@ -253,8 +266,14 @@ function initShiny() {
   // Initialize all input objects in the document, before binding
   initializeInputs(document);
 
-  var initialValues = _bindAll(document);
-
+  // The input values returned by _bindAll() each have a structure like this:
+  //   { value: 123, opts: { ... } }
+  // We want to only keep the value. This is because when the initialValues is
+  // passed to ShinyApp.connect(), the ShinyApp object stores the
+  // initialValues object for the duration of the session, and the opts may
+  // have a reference to the DOM element, which would prevent it from being
+  // GC'd.
+  var initialValues = mapValues(_bindAll(document), x => x.value);
 
   // The server needs to know the size of each image and plot output element,
   // in case it is auto-sizing
@@ -414,12 +433,28 @@ function initShiny() {
   initialValues['.clientdata_url_hostname'] = window.location.hostname;
   initialValues['.clientdata_url_port']     = window.location.port;
   initialValues['.clientdata_url_pathname'] = window.location.pathname;
+
+  // Send initial URL search (query string) and update it if it changes
   initialValues['.clientdata_url_search']   = window.location.search;
+
+  $(window).on('pushstate', function(e) {
+    inputs.setInput('.clientdata_url_search', window.location.search);
+  });
+
+  $(window).on('popstate', function(e) {
+    inputs.setInput('.clientdata_url_search', window.location.search);
+  });
+
   // This is only the initial value of the hash. The hash can change, but
-  // a reactive version of this isn't sent because w atching for changes can
+  // a reactive version of this isn't sent because watching for changes can
   // require polling on some browsers. The JQuery hashchange plugin can be
   // used if this capability is important.
   initialValues['.clientdata_url_hash_initial'] = window.location.hash;
+  initialValues['.clientdata_url_hash'] = window.location.hash;
+
+  $(window).on('hashchange', function(e) {
+    inputs.setInput('.clientdata_url_hash', location.hash);
+  });
 
   // The server needs to know what singletons were rendered as part of
   // the page loading
@@ -435,12 +470,16 @@ function initShiny() {
     }
   });
 
+  // IE8 and IE9 have some limitations with data URIs
+  initialValues['.clientdata_allowDataUriScheme'] = typeof WebSocket !== 'undefined';
+
   // We've collected all the initial values--start the server process!
   inputsNoResend.reset(initialValues);
   shinyapp.connect(initialValues);
   $(document).one("shiny:connected", function() {
     initDeferredIframes();
   });
+
 } // function initShiny()
 
 

@@ -13,9 +13,12 @@ be set with (for example) \code{options(shiny.trace=TRUE)}.
     when an app is run. See \code{\link{runApp}} for more information.}
   \item{shiny.port}{A port number that Shiny will listen on. See
     \code{\link{runApp}} for more information.}
-  \item{shiny.trace}{If \code{TRUE}, all of the messages sent between the R
-    server and the web browser client will be printed on the console. This
-    is useful for debugging.}
+  \item{shiny.trace}{Print messages sent between the R server and the web
+    browser client to the R console. This is useful for debugging. Possible
+    values are \code{"send"} (only print messages sent to the client),
+    \code{"recv"} (only print messages received by the server), \code{TRUE}
+    (print all messages), or \code{FALSE} (default; don't print any of these
+    messages).}
   \item{shiny.autoreload}{If \code{TRUE} when a Shiny app is launched, the
     app directory will be continually monitored for changes to files that
     have the extensions: r, htm, html, js, css, png, jpg, jpeg, gif. If any
@@ -78,6 +81,8 @@ The default polling interval is 500 milliseconds. You can change this
     particular error \code{e} to get displayed to the user, then set this option
     to \code{TRUE} and use \code{stop(safeError(e))} for errors you want the
     user to see.}
+  \item{shiny.testmode}{If \code{TRUE}, then enable features for testing Shiny
+    applications. If \code{FALSE} (the default), do not enable those features.
+  }
 }
 }
-

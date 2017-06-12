@@ -26,6 +26,7 @@ area occupies 2/3 of the horizontal width and typically contains outputs.
 \examples{
 ## Only run examples in interactive R sessions
 if (interactive()) {
+options(device.ask.default = FALSE)
 
 # Define UI
 ui <- fluidPage(
@@ -62,4 +63,3 @@ server <- function(input, output) {
 shinyApp(ui, server)
 }
 }
-

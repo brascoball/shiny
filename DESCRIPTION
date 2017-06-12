@@ -1,7 +1,7 @@
 Package: shiny
 Type: Package
 Title: Web Application Framework for R
-Version: 0.14.1.9001
+Version: 1.0.3.9000
 Authors@R: c(
     person("Winston", "Chang", role = c("aut", "cre"), email = "winston@rstudio.com"),
     person("Joe", "Cheng", role = "aut", email = "joe@rstudio.com"),
@@ -56,7 +56,7 @@ Authors@R: c(
     )
 Description: Makes it incredibly easy to build interactive web
     applications with R. Automatic "reactive" binding between inputs and
-    outputs and extensive pre-built widgets make it possible to build
+    outputs and extensive prebuilt widgets make it possible to build
     beautiful, responsive, and powerful applications with minimal effort.
 License: GPL-3 | file LICENSE
 Depends:
@@ -71,7 +71,8 @@ Imports:
     digest,
     htmltools (>= 0.3.5),
     R6 (>= 2.0),
-    sourcetools
+    sourcetools,
+    tools
 Suggests:
     datasets,
     Cairo (>= 1.5-5),
@@ -79,7 +80,8 @@ Suggests:
     knitr (>= 1.6),
     markdown,
     rmarkdown,
-    ggplot2
+    ggplot2,
+    magrittr
 URL: http://shiny.rstudio.com
 BugReports: https://github.com/rstudio/shiny/issues
 Collate:
@@ -97,6 +99,9 @@ Collate:
     'diagnose.R'
     'fileupload.R'
     'graph.R'
+    'reactives.R'
+    'reactive-domains.R'
+    'history.R'
     'hooks.R'
     'html-deps.R'
     'htmltools.R'
@@ -128,8 +133,6 @@ Collate:
     'priorityqueue.R'
     'progress.R'
     'react.R'
-    'reactive-domains.R'
-    'reactives.R'
     'render-plot.R'
     'render-table.R'
     'run-url.R'
@@ -142,6 +145,7 @@ Collate:
     'shinywrappers.R'
     'showcase.R'
     'tar.R'
+    'test-export.R'
     'timer.R'
     'update-input.R'
-RoxygenNote: 5.0.1
+RoxygenNote: 6.0.1

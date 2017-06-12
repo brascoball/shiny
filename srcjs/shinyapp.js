@@ -4,6 +4,9 @@ var ShinyApp = function() {
   // Cached input values
   this.$inputValues = {};
 
+  // Input values at initialization (and reconnect)
+  this.$initialInput = {};
+
   // Output bindings
   this.$bindings = {};
 
@@ -26,11 +29,6 @@ var ShinyApp = function() {
   this.connect = function(initialInput) {
     if (this.$socket)
       throw "Connect was already called on this application object";
-
-    $.extend(initialInput, {
-      // IE8 and IE9 have some limitations with data URIs
-      ".clientdata_allowDataUriScheme": typeof WebSocket !== 'undefined'
-    });
 
     this.$socket = this.createSocket();
     this.$initialInput = initialInput;
@@ -146,7 +144,7 @@ var ShinyApp = function() {
 
     // function to normalize hostnames
     var normalize = function(hostname) {
-      if (hostname == "127.0.0.1")
+      if (hostname === "127.0.0.1")
         return "localhost";
       else
         return hostname;
@@ -160,7 +158,7 @@ var ShinyApp = function() {
       a.href = parentUrl;
 
       // post the disconnected message if the hostnames are the same
-      if (normalize(a.hostname) == normalize(window.location.hostname)) {
+      if (normalize(a.hostname) === normalize(window.location.hostname)) {
         var protocol = a.protocol.replace(':',''); // browser compatability
         var origin = protocol + '://' + a.hostname;
         if (a.port)
@@ -456,8 +454,14 @@ var ShinyApp = function() {
 
   // Adds custom message handler - this one is exposed to the user
   function addCustomMessageHandler(type, handler) {
+    // Remove any previously defined handlers so that only the most recent one
+    // will be called
     if (customMessageHandlers[type]) {
-      throw('handler for message of type "' + type + '" already added.');
+      var typeIdx = customMessageHandlerOrder.indexOf(type);
+      if (typeIdx !== -1) {
+        customMessageHandlerOrder.splice(typeIdx, 1);
+        delete customMessageHandlers[type];
+      }
     }
     if (typeof(handler) !== 'function') {
       throw('handler must be a function.');
@@ -625,7 +629,9 @@ var ShinyApp = function() {
   });
 
   addMessageHandler('config', function(message) {
-    this.config = message;
+    this.config = {workerId: message.workerId, sessionId: message.sessionId};
+    if (message.user) exports.user = message.user;
+    $(document).trigger('shiny:sessioninitialized');
   });
 
   addMessageHandler('busy', function(message) {
@@ -657,7 +663,9 @@ var ShinyApp = function() {
       // render the HTML and deps to a null target, so
       // the side-effect of rendering the deps, singletons,
       // and <head> still occur
-      exports.renderHtml($([]), message.content.html, message.content.deps);
+      console.warn('The selector you chose ("' + message.selector +
+                   '") could not be found in the DOM.');
+      exports.renderHtml(message.content.html, $([]), message.content.deps);
     } else {
       targets.each(function (i, target) {
         exports.renderContent(target, message.content, message.where);
@@ -679,7 +687,51 @@ var ShinyApp = function() {
   });
 
   addMessageHandler('updateQueryString', function(message) {
-    window.history.replaceState(null, null, message.queryString);
+
+    // leave the bookmarking code intact
+    if (message.mode === "replace") {
+      window.history.replaceState(null, null, message.queryString);
+      return;
+    }
+
+    var what = null;
+    if (message.queryString.charAt(0) === "#") what = "hash";
+    else if (message.queryString.charAt(0) === "?") what = "query";
+    else throw "The 'query' string must start with either '?' " +
+               "(to update the query string) or with '#' (to " +
+               "update the hash).";
+
+    var path = window.location.pathname;
+    var oldQS = window.location.search;
+    var oldHash = window.location.hash;
+
+    /* Barbara -- December 2016
+    Note: we could check if the new QS and/or hash are different
+    from the old one(s) and, if not, we could choose not to push
+    a new state (whether or not we would replace it is moot/
+    inconsequential). However, I think that it is better to
+    interpret each call to `updateQueryString` as representing
+    new state (even if the message.queryString is the same), so
+    that check isn't even performed as of right now.
+    */
+
+    var relURL = path;
+    if (what === "query") relURL += message.queryString;
+    else relURL += oldQS + message.queryString; // leave old QS if it exists
+    window.history.pushState(null, null, relURL);
+
+    // for the case when message.queryString has both a query string
+    // and a hash (`what = "hash"` allows us to trigger the
+    // hashchange event)
+    if (message.queryString.indexOf("#") !== -1) what = "hash";
+
+    // for the case when there was a hash before, but there isn't
+    // any hash now (e.g. for when only the query string is updated)
+    if (window.location.hash !== oldHash) what = "hash";
+
+    // This event needs to be triggered manually because pushState() never
+    // causes a hashchange event to be fired,
+    if (what === "hash") $(document).trigger("hashchange");
   });
 
   addMessageHandler("resetBrush", function(message) {
@@ -774,14 +826,9 @@ var ShinyApp = function() {
         if (typeof(message.detail) !== 'undefined') {
           $progress.find('.progress-detail').text(message.detail);
         }
-        if (typeof(message.value) !== 'undefined') {
-          if (message.value !== null) {
-            $progress.find('.progress').show();
-            $progress.find('.progress-bar').width((message.value*100) + '%');
-
-          } else {
-            $progress.find('.progress').hide();
-          }
+        if (typeof(message.value) !== 'undefined' && message.value !== null) {
+          $progress.find('.progress').show();
+          $progress.find('.progress-bar').width((message.value*100) + '%');
         }
 
       } else if (message.style === "old") {
@@ -794,13 +841,9 @@ var ShinyApp = function() {
         if (typeof(message.detail) !== 'undefined') {
           $progress.find('.progress-detail').text(message.detail);
         }
-        if (typeof(message.value) !== 'undefined') {
-          if (message.value !== null) {
-            $progress.find('.progress').show();
-            $progress.find('.bar').width((message.value*100) + '%');
-          } else {
-            $progress.find('.progress').hide();
-          }
+        if (typeof(message.value) !== 'undefined' && message.value !== null) {
+          $progress.find('.progress').show();
+          $progress.find('.bar').width((message.value*100) + '%');
         }
 
         $progress.fadeIn();
@@ -832,6 +875,25 @@ var ShinyApp = function() {
 
   exports.progressHandlers = progressHandlers;
 
+  // Returns a URL which can be queried to get values from inside the server
+  // function. This is enabled with `options(shiny.testmode=TRUE)`.
+  this.getTestSnapshotBaseUrl = function({ fullUrl = true } = {})
+  {
+    const loc = window.location;
+    let url = "";
+
+    if (fullUrl) {
+      // Strip off everything after last slash in path, like dirname() in R
+      url = loc.origin + loc.pathname.replace(/\/[^/]*$/, "");
+    }
+    url += "/session/" +
+      encodeURIComponent(this.config.sessionId) +
+      "/dataobj/shinytest?w=" +
+      encodeURIComponent(this.config.workerId) +
+      "&nonce=" + randomId();
+
+    return url;
+  };
 
 }).call(ShinyApp.prototype);
 

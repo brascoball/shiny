@@ -18,7 +18,7 @@ extension \code{.png}.}
 \item{height}{Height in pixels.}
 
 \item{res}{Resolution in pixels per inch. This value is passed to
-\code{\link{png}}. Note that this affects the resolution of PNG rendering in
+\code{\link[grDevices]{png}}. Note that this affects the resolution of PNG rendering in
 R; it won't change the actual ppi of the browser.}
 
 \item{...}{Arguments to be passed through to \code{\link[grDevices]{png}}.
@@ -41,4 +41,3 @@ In some cases, \code{Cairo()} provides output that looks worse than
 \code{png()}. To disable Cairo output for an app, use
 \code{options(shiny.usecairo=FALSE)}.
 }
-

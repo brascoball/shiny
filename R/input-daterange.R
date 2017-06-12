@@ -10,7 +10,7 @@
 #'   \item \code{yy} Year without century (12)
 #'   \item \code{yyyy} Year with century (2012)
 #'   \item \code{mm} Month number, with leading zero (01-12)
-#'   \item \code{m} Month number, without leading zero (01-12)
+#'   \item \code{m} Month number, without leading zero (1-12)
 #'   \item \code{M} Abbreviated month name
 #'   \item \code{MM} Full month name
 #'   \item \code{dd} Day of month with leading zero
@@ -103,7 +103,7 @@ dateRangeInput <- function(inputId, label, start = NULL, end = NULL,
           class = "input-sm form-control",
           type = "text",
           `data-date-language` = language,
-          `data-date-weekstart` = weekstart,
+          `data-date-week-start` = weekstart,
           `data-date-min-view-mode` = minviewmode,
           `data-date-format` = format,
           `data-date-start-view` = startview,
@@ -116,7 +116,7 @@ dateRangeInput <- function(inputId, label, start = NULL, end = NULL,
           class = "input-sm form-control",
           type = "text",
           `data-date-language` = language,
-          `data-date-weekstart` = weekstart,
+          `data-date-week-start` = weekstart,
           `data-date-min-view-mode` = minviewmode,
           `data-date-format` = format,
           `data-date-start-view` = startview,

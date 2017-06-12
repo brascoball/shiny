@@ -182,6 +182,16 @@ anyUnnamed <- function(x) {
   any(!nzchar(nms))
 }
 
+
+# Given a vector/list, returns a named vector (the labels will be blank).
+asNamedVector <- function(x) {
+  if (!is.null(names(x)))
+    return(x)
+
+  names(x) <- rep.int("", length(x))
+  x
+}
+
 # Given two named vectors, join them together, and keep only the last element
 # with a given name in the resulting vector. If b has any elements with the same
 # name as elements in a, the element in a is dropped. Also, if there are any
@@ -196,6 +206,30 @@ mergeVectors <- function(a, b) {
   x[!drop_idx]
 }
 
+# Sort a vector by the names of items. If there are multiple items with the
+# same name, preserve the original order of those items. For empty
+# vectors/lists/NULL, return the original value.
+sortByName <- function(x) {
+  if (anyUnnamed(x))
+    stop("All items must be named")
+
+  # Special case for empty vectors/lists, and NULL
+  if (length(x) == 0)
+    return(x)
+
+  x[order(names(x))]
+}
+
+# Wrapper around list2env with a NULL check. In R <3.2.0, if an empty unnamed
+# list is passed to list2env(), it errors. But an empty named list is OK. For
+# R >=3.2.0, this wrapper is not necessary.
+list2env2 <- function(x, ...) {
+  # Ensure that zero-length lists have a name attribute
+   if (length(x) == 0)
+    attr(x, "names") <- character(0)
+
+  list2env(x, ...)
+}
 
 # Combine dir and (file)name into a file path. If a file already exists with a
 # name differing only by case, then use it instead.
@@ -1094,6 +1128,7 @@ reactiveStop <- function(message = "", class = NULL) {
 #' @examples
 #' ## Only run examples in interactive R sessions
 #' if (interactive()) {
+#' options(device.ask.default = FALSE)
 #'
 #' ui <- fluidPage(
 #'   checkboxGroupInput('in1', 'Check some letters', choices = head(LETTERS)),
@@ -1196,7 +1231,7 @@ need <- function(expr, message = paste(label, "must be provided"), label) {
 #' \strong{Truthy and falsy values}
 #'
 #' The terms "truthy" and "falsy" generally indicate whether a value, when
-#' coerced to a \code{\link{logical}}, is \code{TRUE} or \code{FALSE}. We use
+#' coerced to a \code{\link[base]{logical}}, is \code{TRUE} or \code{FALSE}. We use
 #' the term a little loosely here; our usage tries to match the intuitive
 #' notions of "Is this value missing or available?", or "Has the user provided
 #' an answer?", or in the case of action buttons, "Has the button been

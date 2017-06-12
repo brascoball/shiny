@@ -38,9 +38,10 @@ var IE8FileUploader = function(shinyapp, id, fileEl) {
   };
 }).call(IE8FileUploader.prototype);
 
-var FileUploader = function(shinyapp, id, files) {
+var FileUploader = function(shinyapp, id, files, el) {
   this.shinyapp = shinyapp;
   this.id = id;
+  this.el = el;
   FileProcessor.call(this, files);
 };
 $.extend(FileUploader.prototype, FileProcessor.prototype);
@@ -115,6 +116,26 @@ $.extend(FileUploader.prototype, FileProcessor.prototype);
   };
   this.onComplete = function() {
     var self = this;
+
+    var fileInfo = $.map(this.files, function(file, i) {
+      return {
+        name: file.name,
+        size: file.size,
+        type: file.type
+      };
+    });
+
+    // Trigger shiny:inputchanged. Unlike a normal shiny:inputchanged event,
+    // it's not possible to modify the information before the values get
+    // sent to the server.
+    var evt = jQuery.Event("shiny:inputchanged");
+    evt.name = this.id;
+    evt.value = fileInfo;
+    evt.binding = fileInputBinding;
+    evt.el = this.el;
+    evt.inputType = 'shiny.fileupload';
+    $(document).trigger(evt);
+
     this.makeRequest(
       'uploadEnd', [this.jobId, this.id],
       function(response) {
@@ -148,7 +169,7 @@ $.extend(FileUploader.prototype, FileProcessor.prototype);
     this.$container().css('visibility', visible ? 'visible' : 'hidden');
   };
   this.$setError = function(error) {
-    this.$bar().toggleClass('bar-danger', (error !== null));
+    this.$bar().toggleClass('progress-bar-danger', (error !== null));
     if (error !== null) {
       this.onProgress(null, 1);
       this.$bar().text(error);
@@ -195,7 +216,8 @@ function uploadFiles(evt) {
     /*jshint nonew:false */
     new IE8FileUploader(exports.shinyapp, id, evt.target);
   } else {
-    $el.data('currentUploader', new FileUploader(exports.shinyapp, id, files));
+    $el.data('currentUploader',
+      new FileUploader(exports.shinyapp, id, files, evt.target));
   }
 }
 

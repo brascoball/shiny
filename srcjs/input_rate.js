@@ -178,6 +178,7 @@ function throttle(threshold, func) {
   return throttled;
 }
 
+
 // Schedules data to be sent to shinyapp at the next setTimeout(0).
 // Batches multiple input calls into one websocket message.
 var InputBatchSender = function(shinyapp) {
@@ -192,6 +193,7 @@ var InputBatchSender = function(shinyapp) {
     var self = this;
 
     this.pendingData[name] = value;
+
     if (!this.timerId && !this.reentrant) {
       this.timerId = setTimeout(function() {
         self.reentrant = true;
@@ -211,77 +213,91 @@ var InputBatchSender = function(shinyapp) {
   };
 }).call(InputBatchSender.prototype);
 
+
 var InputNoResendDecorator = function(target, initialValues) {
   this.target = target;
-  this.lastSentValues = initialValues || {};
+  this.lastSentValues = this.reset(initialValues);
 };
 (function() {
   this.setInput = function(name, value) {
-    var jsonValue = JSON.stringify(value);
-    if (this.lastSentValues[name] === jsonValue)
+    // Note that opts is not passed to setInput at this stage of the input
+    // decorator stack. If in the future this setInput keeps track of opts, it
+    // would be best not to store the `el`, because that could prevent it from
+    // being GC'd.
+    const { name: inputName, inputType: inputType } = splitInputNameType(name);
+    const jsonValue = JSON.stringify(value);
+
+    if (this.lastSentValues[inputName] &&
+        this.lastSentValues[inputName].jsonValue === jsonValue &&
+        this.lastSentValues[inputName].inputType === inputType) {
       return;
-    this.lastSentValues[name] = jsonValue;
+    }
+    this.lastSentValues[inputName] = { jsonValue, inputType };
     this.target.setInput(name, value);
   };
-  this.reset = function(values) {
-    values = values || {};
-    var strValues = {};
-    $.each(values, function(key, value) {
-      strValues[key] = JSON.stringify(value);
-    });
-    this.lastSentValues = strValues;
+  this.reset = function(values = {}) {
+    // Given an object with flat name-value format:
+    //   { x: "abc", "y.shiny.number": 123 }
+    // Create an object in cache format and save it:
+    //   { x: { jsonValue: '"abc"', inputType: "" },
+    //     y: { jsonValue: "123", inputType: "shiny.number" } }
+    const cacheValues = {};
+
+    for (let inputName in values) {
+      if (values.hasOwnProperty(inputName)) {
+        let { name, inputType } = splitInputNameType(inputName);
+        cacheValues[name] = {
+          jsonValue: JSON.stringify(values[inputName]),
+          inputType: inputType
+        };
+      }
+    }
+
+    this.lastSentValues = cacheValues;
   };
 }).call(InputNoResendDecorator.prototype);
 
-var InputDeferDecorator = function(target) {
-  this.target = target;
-  this.pendingInput = {};
-};
-(function() {
-  this.setInput = function(name, value) {
-    if (/^\./.test(name))
-      this.target.setInput(name, value);
-    else
-      this.pendingInput[name] = value;
-  };
-  this.submit = function() {
-    for (var name in this.pendingInput) {
-      if (this.pendingInput.hasOwnProperty(name))
-        this.target.setInput(name, this.pendingInput[name]);
-    }
-  };
-}).call(InputDeferDecorator.prototype);
 
 var InputEventDecorator = function(target) {
   this.target = target;
 };
 (function() {
-  this.setInput = function(name, value, immediate) {
+  this.setInput = function(name, value, opts) {
     var evt = jQuery.Event("shiny:inputchanged");
-    var name2 = name.split(':');
-    evt.name = name2[0];
-    evt.inputType = name2.length > 1 ? name2[1] : '';
-    evt.value = value;
+
+    const input = splitInputNameType(name);
+    evt.name      = input.name;
+    evt.inputType = input.inputType;
+    evt.value     = value;
+    evt.binding   = opts.binding;
+    evt.el        = opts.el;
+
     $(document).trigger(evt);
+
     if (!evt.isDefaultPrevented()) {
       name = evt.name;
       if (evt.inputType !== '') name += ':' + evt.inputType;
-      this.target.setInput(name, evt.value, immediate);
+
+      // opts aren't passed along to lower levels in the input decorator
+      // stack.
+      this.target.setInput(name, evt.value);
     }
   };
 }).call(InputEventDecorator.prototype);
+
 
 var InputRateDecorator = function(target) {
   this.target = target;
   this.inputRatePolicies = {};
 };
 (function() {
-  this.setInput = function(name, value, immediate) {
+  this.setInput = function(name, value, opts) {
     this.$ensureInit(name);
-    if (immediate)
-      this.inputRatePolicies[name].immediateCall(name, value, immediate);
+
+    if (opts.immediate)
+      this.inputRatePolicies[name].immediateCall(name, value, opts);
     else
-      this.inputRatePolicies[name].normalCall(name, value, immediate);
+      this.inputRatePolicies[name].normalCall(name, value, opts);
   };
   this.setRatePolicy = function(name, mode, millis) {
     if (mode === 'direct') {
@@ -298,7 +314,63 @@ var InputRateDecorator = function(target) {
     if (!(name in this.inputRatePolicies))
       this.setRatePolicy(name, 'direct');
   };
-  this.$doSetInput = function(name, value) {
-    this.target.setInput(name, value);
+  this.$doSetInput = function(name, value, opts) {
+    this.target.setInput(name, value, opts);
   };
 }).call(InputRateDecorator.prototype);
+
+
+var InputDeferDecorator = function(target) {
+  this.target = target;
+  this.pendingInput = {};
+};
+(function() {
+  this.setInput = function(name, value, opts) {
+    if (/^\./.test(name))
+      this.target.setInput(name, value, opts);
+    else
+      this.pendingInput[name] = { value, opts };
+  };
+  this.submit = function() {
+    for (var name in this.pendingInput) {
+      if (this.pendingInput.hasOwnProperty(name)) {
+        let input = this.pendingInput[name];
+        this.target.setInput(name, input.value, input.opts);
+      }
+    }
+  };
+}).call(InputDeferDecorator.prototype);
+
+
+const InputValidateDecorator = function(target) {
+  this.target = target;
+};
+(function() {
+  this.setInput = function(name, value, opts) {
+    if (!name)
+      throw "Can't set input with empty name.";
+
+    opts = addDefaultInputOpts(opts);
+
+    this.target.setInput(name, value, opts);
+  };
+}).call(InputValidateDecorator.prototype);
+
+
+// Merge opts with defaults, and return a new object.
+function addDefaultInputOpts(opts) {
+  return $.extend({
+    immediate: false,
+    binding: null,
+    el: null
+  }, opts);
+}
+
+
+function splitInputNameType(name) {
+  const name2 = name.split(':');
+  return {
+    name:      name2[0],
+    inputType: name2.length > 1 ? name2[1] : ''
+  };
+}

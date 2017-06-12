@@ -1,6 +1,77 @@
 context("reactivity")
 
 
+test_that("ReactiveVal", {
+  val <- reactiveVal()
+
+  isolate({
+    expect_true(is.null(val()))
+
+    # Set to a simple value
+    val(1)
+    expect_equal(val(), 1)
+
+    # Set to a complex value
+    val(cars)
+    expect_equal(val(), cars)
+
+    # Check that passing in an initial value works
+    expect_equal(reactiveVal(10)(), 10)
+  })
+
+  o <- observe({
+    val()
+  })
+  flushReact()
+  expect_equal(execCount(o), 1)
+  # Just making sure o is stable
+  flushReact()
+  expect_equal(execCount(o), 1)
+
+  # Changing value causes o to invalidate
+  val(10)
+  flushReact()
+  expect_equal(execCount(o), 2)
+
+  # Setting new value that's same as current value is a no-op
+  val(10)
+  flushReact()
+  expect_equal(execCount(o), 2)  #
+
+  o$destroy()
+})
+
+test_that("ReactiveVals have independent dependencies", {
+  # Issue 1710
+  x <- reactiveVal(0)
+  y <- reactiveVal(0)
+
+  o <- observe({
+    y()
+  })
+
+  # The observer always fires the first time
+  x(1)
+  flushReact()
+  expect_equal(execCount(o), 1)
+
+  # Changing x again shouldn't invalidate the observer
+  x(2)
+  flushReact()
+  expect_equal(execCount(o), 1)
+
+  o$destroy()
+})
+
+
+test_that("ReactiveVal labels", {
+  val <- reactiveVal()
+  expect_equal(attr(val, "label", exact = TRUE), "val")
+
+  name.with.dots = reactiveVal()
+  expect_equal(attr(name.with.dots, "label", exact = TRUE), "name.with.dots")
+})
+
 # Test for correct behavior of ReactiveValues
 test_that("ReactiveValues", {
   # Creation and indexing into ReactiveValues -------------------------------
@@ -975,4 +1046,84 @@ test_that("event handling helpers take correct dependencies", {
   expect_equal(o2_count, 2)
   expect_equal(execCount(o1), 2)
   expect_equal(execCount(o2), 2)
+})
+
+run_debounce_throttle <- function(do_priming) {
+  # The changing of rv$a will be the (chatty) source of reactivity.
+  rv <- reactiveValues(a = 0)
+
+  # This observer will be what changes rv$a.
+  src <- observe({
+    invalidateLater(100)
+    rv$a <- isolate(rv$a) + 1
+  })
+  on.exit(src$destroy(), add = TRUE)
+
+  # Make a debounced reactive to test.
+  dr <- debounce(reactive(rv$a), 500)
+
+  # Make a throttled reactive to test.
+  tr <- throttle(reactive(rv$a), 500)
+
+  # Keep track of how often dr/tr are fired
+  dr_fired <- 0
+  dr_monitor <- observeEvent(dr(), {
+    dr_fired <<- dr_fired + 1
+  })
+  on.exit(dr_monitor$destroy(), add = TRUE)
+
+  tr_fired <- 0
+  tr_monitor <- observeEvent(tr(), {
+    tr_fired <<- tr_fired + 1
+  })
+  on.exit(tr_monitor$destroy(), add = TRUE)
+
+  # Starting values are both 0. Earlier I found that the tests behaved
+  # differently if I accessed the values of dr/tr before the first call to
+  # flushReact(). That bug was fixed, but to ensure that similar bugs don't
+  # appear undetected, we run this test with and without do_priming.
+  if (do_priming) {
+    expect_identical(isolate(dr()), 0)
+    expect_identical(isolate(tr()), 0)
+  }
+
+  # Pump timer and reactives for about 1.4 seconds
+  stopAt <- Sys.time() + 1.4
+  while (Sys.time() < stopAt) {
+    timerCallbacks$executeElapsed()
+    flushReact()
+    Sys.sleep(0.001)
+  }
+
+  # dr() should not have had time to fire, other than the initial run, since
+  # there haven't been long enough gaps between invalidations.
+  expect_identical(dr_fired, 1)
+  # The value of dr() should not have updated either.
+  expect_identical(isolate(dr()), 0)
+
+  # tr() however, has had time to fire multiple times and update its value.
+  expect_identical(tr_fired, 3)
+  expect_identical(isolate(tr()), 10)
+
+  # Now let some time pass without any more updates.
+  src$destroy() # No more updates
+  stopAt <- Sys.time() + 1
+  while (Sys.time() < stopAt) {
+    timerCallbacks$executeElapsed()
+    flushReact()
+    Sys.sleep(0.001)
+  }
+
+  # dr should've fired, and we should have converged on the right answer.
+  expect_identical(dr_fired, 2)
+  isolate(expect_identical(rv$a, dr()))
+  expect_identical(tr_fired, 4)
+  isolate(expect_identical(rv$a, tr()))
+}
+
+test_that("debounce/throttle work properly (with priming)", {
+  run_debounce_throttle(TRUE)
+})
+test_that("debounce/throttle work properly (without priming)", {
+  run_debounce_throttle(FALSE)
 })

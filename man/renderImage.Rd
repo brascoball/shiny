@@ -47,6 +47,7 @@ the CSS class name \code{shiny-image-output}.
 \examples{
 ## Only run examples in interactive R sessions
 if (interactive()) {
+options(device.ask.default = FALSE)
 
 ui <- fluidPage(
   sliderInput("n", "Number of observations", 2, 1000, 500),
@@ -114,4 +115,3 @@ shinyApp(ui, server)
 For more details on how the images are generated, and how to control
   the output, see \code{\link{plotPNG}}.
 }
-

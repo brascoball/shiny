@@ -27,12 +27,13 @@
     }
     \item{\code{singletons} - for internal use}
     \item{\code{url_protocol}, \code{url_hostname}, \code{url_port},
-      \code{url_pathname}, \code{url_search}, and \code{url_hash_initial}
-      can be used to get the components of the URL that was requested by the
-      browser to load the Shiny app page. These values are from the
-      browser's perspective, so neither HTTP proxies nor Shiny Server will
-      affect these values. The \code{url_search} value may be used with
-      \code{\link{parseQueryString}} to access query string parameters.
+      \code{url_pathname}, \code{url_search}, \code{url_hash_initial}
+      and \code{url_hash} can be used to get the components of the URL
+      that was requested by the browser to load the Shiny app page.
+      These values are from the browser's perspective, so neither HTTP
+      proxies nor Shiny Server will affect these values. The
+      \code{url_search} value may be used with \code{\link{parseQueryString}}
+      to access query string parameters.
     }
   }
   \code{clientData} also contains information about each output.
@@ -102,6 +103,10 @@
   This is the request that was used to initiate the websocket connection
   (as opposed to the request that downloaded the web page for the app).
 }
+\item{userData}{
+  An environment for app authors and module/package authors to store whatever
+  session-specific data they want.
+}
 \item{resetBrush(brushId)}{
   Resets/clears the brush with the given \code{brushId}, if it exists on
   any \code{imageOutput} or \code{plotOutput} in the app.
@@ -155,6 +160,19 @@
 \item{doBookmark()}{
   Do bookmarking and invoke the onBookmark and onBookmarked callback functions.
 }
+\item{exportTestValues()}{
+  Registers expressions for export in test mode, available at the test
+  snapshot URL.
+}
+\item{getTestSnapshotUrl(input=TRUE, output=TRUE, export=TRUE,
+  format="json")}{
+  Returns a URL for the test snapshots. Only has an effect when the
+  \code{shiny.testmode} option is set to TRUE. For the input, output, and
+  export arguments, TRUE means to return all of these values. It is also
+  possible to specify by name which values to return by providing a
+  character vector, as in \code{input=c("x", "y")}. The format can be
+  "rds" or "json".
+}
 }
 \description{
 Shiny server functions can optionally include \code{session} as a parameter
@@ -164,4 +182,3 @@ relating to the session. The following list describes the items available
 in the environment; they can be accessed using the \code{$} operator (for
 example, \code{session$clientData$url_search}).
 }
-

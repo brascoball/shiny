@@ -1,10 +1,16 @@
 function escapeHTML(str) {
-  return str.replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;")
-            .replace(/\//g,"&#x2F;");
+  var escaped = {
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#039;",
+    "/": "&#x2F;"
+  };
+
+  return str.replace(/[&<>'"\/]/g, function(m) {
+    return escaped[m];
+  });
 }
 
 function randomId() {
@@ -48,6 +54,17 @@ function padZeros(n, digits) {
   while (str.length < digits)
     str = "0" + str;
   return str;
+}
+
+// Round to a specified number of significant digits.
+function roundSignif(x, digits = 1) {
+  if (digits < 1)
+    throw "Significant digits must be at least 1.";
+
+  // This converts to a string and back to a number, which is inelegant, but
+  // is less prone to FP rounding error than an alternate method which used
+  // Math.round().
+  return parseFloat(x.toPrecision(digits));
 }
 
 // Take a string with format "YYYY-MM-DD" and return a Date object.
@@ -144,7 +161,24 @@ function pixelRatio() {
 // "with" on the argument value, and return the result.
 function scopeExprToFunc(expr) {
   /*jshint evil: true */
-  var func = new Function("with (this) {return (" + expr + ");}");
+  var expr_escaped = expr.replace(/[\\"']/g, '\\$&').replace(/\u0000/g, '\\0');
+  try {
+    var func = new Function(
+      `with (this) {
+        try {
+          return (${expr});
+        } catch (e) {
+          console.error('Error evaluating expression: ${expr_escaped}');
+          throw e;
+        }
+      }`
+    );
+  } catch (e) {
+    console.error("Error parsing expression: " + expr);
+    throw e;
+  }
+
+
   return function(scope) {
     return func.call(scope);
   };
@@ -201,3 +235,14 @@ function mergeSort(list, sortfunc) {
 var $escape = exports.$escape = function(val) {
   return val.replace(/([!"#$%&'()*+,.\/:;<=>?@\[\\\]^`{|}~])/g, '\\$1');
 };
+
+// Maps a function over an object, preserving keys. Like the mapValues
+// function from lodash.
+function mapValues(obj, f) {
+  const newObj = {};
+  for (let key in obj) {
+    if (obj.hasOwnProperty(key))
+      newObj[key] = f(obj[key]);
+  }
+  return newObj;
+}

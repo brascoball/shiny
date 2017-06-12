@@ -5,7 +5,7 @@ NULL
 #'
 #' Shiny makes it incredibly easy to build interactive web applications with R.
 #' Automatic "reactive" binding between inputs and outputs and extensive
-#' pre-built widgets make it possible to build beautiful, responsive, and
+#' prebuilt widgets make it possible to build beautiful, responsive, and
 #' powerful applications with minimal effort.
 #'
 #' The Shiny tutorial at \url{http://shiny.rstudio.com/tutorial/} explains
@@ -39,9 +39,12 @@ NULL
 #'     when an app is run. See \code{\link{runApp}} for more information.}
 #'   \item{shiny.port}{A port number that Shiny will listen on. See
 #'     \code{\link{runApp}} for more information.}
-#'   \item{shiny.trace}{If \code{TRUE}, all of the messages sent between the R
-#'     server and the web browser client will be printed on the console. This
-#'     is useful for debugging.}
+#'   \item{shiny.trace}{Print messages sent between the R server and the web
+#'     browser client to the R console. This is useful for debugging. Possible
+#'     values are \code{"send"} (only print messages sent to the client),
+#'     \code{"recv"} (only print messages received by the server), \code{TRUE}
+#'     (print all messages), or \code{FALSE} (default; don't print any of these
+#'     messages).}
 #'   \item{shiny.autoreload}{If \code{TRUE} when a Shiny app is launched, the
 #'     app directory will be continually monitored for changes to files that
 #'     have the extensions: r, htm, html, js, css, png, jpg, jpeg, gif. If any
@@ -104,6 +107,9 @@ NULL
 #'     particular error \code{e} to get displayed to the user, then set this option
 #'     to \code{TRUE} and use \code{stop(safeError(e))} for errors you want the
 #'     user to see.}
+#'   \item{shiny.testmode}{If \code{TRUE}, then enable features for testing Shiny
+#'     applications. If \code{FALSE} (the default), do not enable those features.
+#'   }
 #' }
 #' @name shiny-options
 NULL
@@ -195,12 +201,13 @@ workerId <- local({
 #'     }
 #'     \item{\code{singletons} - for internal use}
 #'     \item{\code{url_protocol}, \code{url_hostname}, \code{url_port},
-#'       \code{url_pathname}, \code{url_search}, and \code{url_hash_initial}
-#'       can be used to get the components of the URL that was requested by the
-#'       browser to load the Shiny app page. These values are from the
-#'       browser's perspective, so neither HTTP proxies nor Shiny Server will
-#'       affect these values. The \code{url_search} value may be used with
-#'       \code{\link{parseQueryString}} to access query string parameters.
+#'       \code{url_pathname}, \code{url_search}, \code{url_hash_initial}
+#'       and \code{url_hash} can be used to get the components of the URL
+#'       that was requested by the browser to load the Shiny app page.
+#'       These values are from the browser's perspective, so neither HTTP
+#'       proxies nor Shiny Server will affect these values. The
+#'       \code{url_search} value may be used with \code{\link{parseQueryString}}
+#'       to access query string parameters.
 #'     }
 #'   }
 #'   \code{clientData} also contains information about each output.
@@ -270,6 +277,10 @@ workerId <- local({
 #'   This is the request that was used to initiate the websocket connection
 #'   (as opposed to the request that downloaded the web page for the app).
 #' }
+#' \item{userData}{
+#'   An environment for app authors and module/package authors to store whatever
+#'   session-specific data they want.
+#' }
 #' \item{resetBrush(brushId)}{
 #'   Resets/clears the brush with the given \code{brushId}, if it exists on
 #'   any \code{imageOutput} or \code{plotOutput} in the app.
@@ -323,6 +334,19 @@ workerId <- local({
 #' \item{doBookmark()}{
 #'   Do bookmarking and invoke the onBookmark and onBookmarked callback functions.
 #' }
+#' \item{exportTestValues()}{
+#'   Registers expressions for export in test mode, available at the test
+#'   snapshot URL.
+#' }
+#' \item{getTestSnapshotUrl(input=TRUE, output=TRUE, export=TRUE,
+#'   format="json")}{
+#'   Returns a URL for the test snapshots. Only has an effect when the
+#'   \code{shiny.testmode} option is set to TRUE. For the input, output, and
+#'   export arguments, TRUE means to return all of these values. It is also
+#'   possible to specify by name which values to return by providing a
+#'   character vector, as in \code{input=c("x", "y")}. The format can be
+#'   "rds" or "json".
+#' }
 #'
 #' @name session
 NULL
@@ -351,12 +375,24 @@ NULL
 #' @seealso \url{http://shiny.rstudio.com/articles/modules.html}
 #' @export
 NS <- function(namespace, id = NULL) {
+  if (length(namespace) == 0)
+    ns_prefix <- character(0)
+  else
+    ns_prefix <- paste(namespace, collapse = ns.sep)
+
+  f <- function(id) {
+    if (length(id) == 0)
+      return(ns_prefix)
+    if (length(ns_prefix) == 0)
+      return(id)
+
+    paste(ns_prefix, id, sep = ns.sep)
+  }
+
   if (missing(id)) {
-    function(id) {
-      paste(c(namespace, id), collapse = ns.sep)
-    }
+    f
   } else {
-    paste(c(namespace, id), collapse = ns.sep)
+    f(id)
   }
 }
 
@@ -392,6 +428,12 @@ ShinySession <- R6Class(
     restoreCallbacks = 'Callbacks',
     restoredCallbacks = 'Callbacks',
     bookmarkExclude = character(0),  # Names of inputs to exclude from bookmarking
+    getBookmarkExcludeFuns = list(),
+
+    testMode = FALSE,                # Are we running in test mode?
+    testExportExprs = list(),
+    outputValues = list(),           # Saved output values (for testing mode)
+    testSnapshotUrl = character(0),
 
     sendResponse = function(requestMsg, value) {
       if (is.null(requestMsg$tag)) {
@@ -414,7 +456,8 @@ ShinySession <- R6Class(
       if (self$closed){
         return()
       }
-      if (isTRUE(getOption('shiny.trace')))
+      traceOption <- getOption('shiny.trace', FALSE)
+      if (isTRUE(traceOption) || traceOption == "send")
         message('SEND ',
            gsub('(?m)base64,[a-zA-Z0-9+/=]+','[base64 data]',json,perl=TRUE))
       private$websocket$send(json)
@@ -548,6 +591,127 @@ ShinySession <- R6Class(
         })
 
       }) # withReactiveDomain
+    },
+
+    # Modules (scopes) call this to register a function that returns a vector
+    # of names to exclude from bookmarking. The function should return
+    # something like c("scope1-x", "scope1-y"). This doesn't use a Callback
+    # object because the return values of the functions are needed, but
+    # Callback$invoke() discards return values.
+    registerBookmarkExclude = function(fun) {
+      len <- length(private$getBookmarkExcludeFuns) + 1
+      private$getBookmarkExcludeFuns[[len]] <- fun
+    },
+
+    # Save output values and errors. This is only used for testing mode.
+    storeOutputValues = function(values = NULL) {
+      private$outputValues <- mergeVectors(private$outputValues, values)
+    },
+
+    enableTestSnapshot = function() {
+      private$testSnapshotUrl <- self$registerDataObj("shinytest", NULL,
+        function(data, req) {
+          if (!isTRUE(private$testMode)) {
+            return()
+          }
+
+          params <- parseQueryString(req$QUERY_STRING)
+          # The format of the response that will be sent back. Defaults to
+          # "json" unless requested otherwise. The only other valid value is
+          # "rds".
+          format <- params$format %OR% "json"
+
+          values <- list()
+
+          if (!is.null(params$input)) {
+
+            allInputs <- isolate(
+              reactiveValuesToList(self$input, all.names = TRUE)
+            )
+
+            # If params$input is "1", return all; otherwise return just the
+            # inputs that are named in params$input, like "x,y,z".
+            if (params$input == "1") {
+              values$input <- allInputs
+            } else {
+              items <- strsplit(params$input, ",")[[1]]
+              items <- intersect(items, names(allInputs))
+              values$input <- allInputs[items]
+            }
+
+            values$input <- sortByName(values$input)
+          }
+
+          if (!is.null(params$output)) {
+
+            if (params$output == "1") {
+              values$output <- private$outputValues
+            } else {
+              items <- strsplit(params$output, ",")[[1]]
+              items <- intersect(items, names(private$outputValues))
+              values$output <- private$outputValues[items]
+            }
+
+            # Filter out those outputs that have the snapshotExclude attribute.
+            exclude_idx <- vapply(names(values$output), function(name) {
+              isTRUE(attr(private$.outputs[[name]], "snapshotExclude", TRUE))
+            }, logical(1))
+            values$output <- values$output[!exclude_idx]
+
+            values$output <- sortByName(values$output)
+          }
+
+          if (!is.null(params$export)) {
+
+            if (params$export == "1") {
+              values$export <- isolate(
+                lapply(private$testExportExprs, function(item) {
+                  eval(item$expr, envir = item$env)
+                })
+              )
+            } else {
+              items <- strsplit(params$export, ",")[[1]]
+              items <- intersect(items, names(private$testExportExprs))
+              values$export <- isolate(
+                lapply(private$testExportExprs[items], function(item) {
+                  eval(item$expr, envir = item$env)
+                })
+              )
+            }
+
+            values$export <- sortByName(values$export)
+          }
+
+          # Make sure input, output, and export are all named lists (at this
+          # point, they could be unnamed if they are empty lists). This is so
+          # that the resulting object is represented as an object in JSON
+          # instead of an array, and so that the RDS data structure is of a
+          # consistent type.
+          values <- lapply(values, asNamedVector)
+
+          if (length(values) == 0) {
+            return(httpResponse(400, "text/plain",
+              "None of export, input, or output requested."
+            ))
+          }
+
+          if (identical(format, "json")) {
+            content <- toJSON(values, pretty = TRUE)
+            httpResponse(200, "application/json", content)
+
+          } else if (identical(format, "rds")) {
+            tmpfile <- tempfile("shinytest", fileext = ".rds")
+            saveRDS(values, tmpfile)
+            on.exit(unlink(tmpfile))
+
+            content <- readBin(tmpfile, "raw", n = file.info(tmpfile)$size)
+            httpResponse(200, "application/octet-stream", content)
+
+          } else {
+            httpResponse(400, "text/plain", paste("Invalid format requested:", format))
+          }
+        }
+      )
     }
   ),
   public = list(
@@ -562,6 +726,7 @@ ShinySession <- R6Class(
     closed = logical(0),
     request = 'ANY',      # Websocket request object
     singletons = character(0),  # Tracks singleton HTML fragments sent to the page
+    userData = 'environment',
     user = NULL,
     groups = NULL,
 
@@ -582,6 +747,7 @@ ShinySession <- R6Class(
       self$progressStack <- Stack$new()
       self$files <- Map$new()
       self$downloads <- Map$new()
+      self$userData <- new.env(parent = emptyenv())
 
       self$input <- .createReactiveValues(private$.input, readonly=TRUE)
       .setLabel(self$input, 'input')
@@ -599,6 +765,9 @@ ShinySession <- R6Class(
       private$restoreCallbacks <- Callbacks$new()
       private$restoredCallbacks <- Callbacks$new()
       private$createBookmarkObservers()
+
+      private$testMode <- .globals$testMode
+      private$enableTestSnapshot()
 
       private$registerSessionEndCallbacks()
 
@@ -618,7 +787,8 @@ ShinySession <- R6Class(
       private$sendMessage(
         config = list(
           workerId = workerId(),
-          sessionId = self$token
+          sessionId = self$token,
+          user = self$user
         )
       )
     },
@@ -675,6 +845,24 @@ ShinySession <- R6Class(
             stop("`fun` must be a function that takes one argument")
           }
           restoredCallbacks$register(fun)
+        },
+        exportTestValues = function(..., quoted_ = FALSE, env_ = parent.frame()) {
+          if (quoted_) {
+            dots <- list(...)
+          } else {
+            dots <- eval(substitute(alist(...)))
+          }
+
+          if (anyUnnamed(dots))
+            stop("exportTestValues: all arguments must be named.")
+
+          names(dots) <- ns(names(dots))
+
+          do.call(
+            .subset2(self, "exportTestValues"),
+            c(dots, quoted_ = TRUE, env_ = env_),
+            quote = TRUE
+          )
         }
       )
 
@@ -782,6 +970,12 @@ ShinySession <- R6Class(
         restoredCallbacks$invoke(scopeState)
       })
 
+      # Returns the excluded names with the scope's ns prefix on them.
+      private$registerBookmarkExclude(function() {
+        excluded <- scope$getBookmarkExclude()
+        ns(excluded)
+      })
+
       scope
     },
     ns = function(id) {
@@ -865,6 +1059,10 @@ ShinySession <- R6Class(
       }
 
       if (is.function(func)) {
+        # Extract any output attributes attached to the render function. These
+        # will be attached to the observer after it's created.
+        outputAttrs <- attr(func, "outputAttrs", TRUE)
+
         funcFormals <- formals(func)
         # ..stacktraceon matches with the top-level ..stacktraceoff.., because
         # the observer we set up below has ..stacktraceon=FALSE
@@ -894,17 +1092,17 @@ ShinySession <- R6Class(
             shinyCallingHandlers(func()),
             shiny.custom.error = function(cond) {
               if (isTRUE(getOption("show.error.messages"))) printError(cond)
-              structure(NULL, class = "try-error", condition = cond)
+              structure(list(), class = "try-error", condition = cond)
             },
             shiny.output.cancel = function(cond) {
-              structure(NULL, class = "cancel-output")
+              structure(list(), class = "cancel-output")
             },
             shiny.silent.error = function(cond) {
               # Don't let shiny.silent.error go through the normal stop
               # path of try, because we don't want it to print. But we
               # do want to try to return the same looking result so that
               # the code below can send the error to the browser.
-              structure(NULL, class = "try-error", condition = cond)
+              structure(list(), class = "try-error", condition = cond)
             },
             error = function(cond) {
               if (isTRUE(getOption("show.error.messages"))) printError(cond)
@@ -913,7 +1111,7 @@ ShinySession <- R6Class(
                                           "logs or contact the app author for",
                                           "clarification."))
               }
-              invisible(structure(NULL, class = "try-error", condition = cond))
+              invisible(structure(list(), class = "try-error", condition = cond))
             },
             finally = {
               private$sendMessage(recalculating = list(
@@ -941,6 +1139,12 @@ ShinySession <- R6Class(
           else
             private$invalidatedOutputValues$set(name, value)
         }, suspended=private$shouldSuspend(name), label=label)
+
+        # If any output attributes were added to the render function attach
+        # them to observer.
+        lapply(names(outputAttrs), function(name) {
+          attr(obs, name) <- outputAttrs[[name]]
+        })
 
         obs$onInvalidate(function() {
           self$showProgress(name)
@@ -992,16 +1196,20 @@ ShinySession <- R6Class(
       }
 
       private$progressKeys <- character(0)
-      values <- private$invalidatedOutputValues
+      values <- as.list(private$invalidatedOutputValues)
       private$invalidatedOutputValues <- Map$new()
-      errors <- private$invalidatedOutputErrors
+      errors <- as.list(private$invalidatedOutputErrors)
       private$invalidatedOutputErrors <- Map$new()
       inputMessages <- private$inputMessageQueue
       private$inputMessageQueue <- list()
 
+      if (isTRUE(private$testMode)) {
+        private$storeOutputValues(mergeVectors(values, errors))
+      }
+
       private$sendMessage(
-        errors = as.list(errors),
-        values = as.list(values),
+        errors = errors,
+        values = values,
         inputMessages = inputMessages
       )
     },
@@ -1099,8 +1307,12 @@ ShinySession <- R6Class(
       private$bookmarkExclude <- names
     },
     getBookmarkExclude = function() {
-      private$bookmarkExclude
+      scopedExcludes <- lapply(private$getBookmarkExcludeFuns, function(f) f())
+      scopedExcludes <- unlist(scopedExcludes)
+
+      c(private$bookmarkExclude, scopedExcludes)
     },
+
     onBookmark = function(fun) {
       if (!is.function(fun) || length(fun) != 1) {
         stop("`fun` must be a function that takes one argument")
@@ -1174,6 +1386,45 @@ ShinySession <- R6Class(
       )
     },
 
+    exportTestValues = function(..., quoted_ = FALSE, env_ = parent.frame()) {
+      # Get a named list of unevaluated expressions.
+      if (quoted_) {
+        dots <- list(...)
+      } else {
+        dots <- eval(substitute(alist(...)))
+      }
+
+      if (anyUnnamed(dots))
+        stop("exportTestValues: all arguments must be named.")
+
+      # Create a named list where each item is a list with an expression and
+      # environment in which to eval the expression.
+      items <- lapply(dots, function(expr) {
+        list(expr = expr, env = env_)
+      })
+
+      private$testExportExprs <- mergeVectors(private$testExportExprs, items)
+    },
+
+    getTestSnapshotUrl = function(input = TRUE, output = TRUE, export = TRUE,
+                                  format = "json") {
+      reqString <- function(group, value) {
+        if (isTRUE(value))
+          paste0(group, "=1")
+        else if (is.character(value))
+          paste0(group, "=", paste(value, collapse = ","))
+        else
+          ""
+      }
+      paste(
+        private$testSnapshotUrl,
+        reqString("input", input),
+        reqString("output", output),
+        reqString("export", export),
+        paste0("format=", format),
+        sep = "&"
+      )
+    },
 
     reactlog = function(logEntry) {
       # Use sendCustomMessage instead of sendMessage, because the handler in
@@ -1202,8 +1453,9 @@ ShinySession <- R6Class(
         )
       )
     },
-    updateQueryString = function(queryString) {
-      private$sendMessage(updateQueryString = list(queryString = queryString))
+    updateQueryString = function(queryString, mode) {
+      private$sendMessage(updateQueryString = list(
+        queryString = queryString, mode = mode))
     },
     resetBrush = function(brushId) {
       private$sendMessage(
@@ -1607,6 +1859,16 @@ outputOptions <- function(x, name, ...) {
   }
 
   .subset2(x, 'impl')$outputOptions(name, ...)
+}
+
+
+#' Mark an output to be excluded from test snapshots
+#'
+#' @param x A reactive which will be assigned to an output.
+#'
+#' @export
+snapshotExclude <- function(x) {
+  markOutputAttrs(x, snapshotExclude = TRUE)
 }
 
 

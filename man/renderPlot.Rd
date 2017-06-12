@@ -20,7 +20,7 @@ inline plot, you must provide numeric values (in pixels) to both
 \code{width} and \code{height}.}
 
 \item{res}{Resolution of resulting plot, in pixels per inch. This value is
-passed to \code{\link{png}}. Note that this affects the resolution of PNG
+passed to \code{\link[grDevices]{png}}. Note that this affects the resolution of PNG
 rendering in R; it won't change the actual ppi of the browser.}
 
 \item{...}{Arguments to be passed through to \code{\link[grDevices]{png}}.
@@ -60,9 +60,9 @@ the CSS class name \code{shiny-plot-output}.
 
   See \code{\link{plotOutput}} for more information about interactive plots.
 }
+
 \seealso{
 For the corresponding client-side output function, and example
   usage, see \code{\link{plotOutput}}. For more details on how the plots are
   generated, and how to control the output, see \code{\link{plotPNG}}.
 }
-

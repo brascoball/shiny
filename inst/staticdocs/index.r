@@ -59,7 +59,8 @@ sd_section("UI Inputs",
     "updateTabsetPanel",
     "updateTextInput",
     "updateTextAreaInput",
-    "updateQueryString"
+    "updateQueryString",
+    "getQueryString"
   )
 )
 sd_section("UI Outputs",
@@ -115,24 +116,26 @@ sd_section("Rendering functions",
     "reactiveUI"
   )
 )
-sd_section("Reactive constructs",
+sd_section("Reactive programming",
   "A sub-library that provides reactive programming facilities for R.",
   c(
-    "invalidateLater",
-    "is.reactivevalues",
-    "isolate",
-    "makeReactiveBinding",
+    "reactive",
     "observe",
     "observeEvent",
-    "reactive",
+    "reactiveVal",
+    "reactiveValues",
+    "reactiveValuesToList",
+    "is.reactivevalues",
+    "isolate",
+    "invalidateLater",
+    "debounce",
+    "showReactLog",
+    "makeReactiveBinding",
     "reactiveFileReader",
     "reactivePoll",
     "reactiveTimer",
-    "reactiveValues",
-    "reactiveValuesToList",
-    "freezeReactiveValue",
     "domains",
-    "showReactLog"
+    "freezeReactiveValue"
   )
 )
 sd_section("Boilerplate",
@@ -189,6 +192,9 @@ sd_section("Utility functions",
     "installExprFunction",
     "parseQueryString",
     "plotPNG",
+    "exportTestValues",
+    "snapshotExclude",
+    "markOutputAttrs",
     "repeatable",
     "shinyDeprecated",
     "serverInfo",

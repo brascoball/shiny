@@ -66,7 +66,7 @@ the browser. It allows the following values:
   \item \code{yy} Year without century (12)
   \item \code{yyyy} Year with century (2012)
   \item \code{mm} Month number, with leading zero (01-12)
-  \item \code{m} Month number, without leading zero (01-12)
+  \item \code{m} Month number, without leading zero (1-12)
   \item \code{M} Abbreviated month name
   \item \code{MM} Full month name
   \item \code{dd} Day of month with leading zero
@@ -122,7 +122,7 @@ shinyApp(ui, server = function(input, output) { })
 \seealso{
 \code{\link{dateInput}}, \code{\link{updateDateRangeInput}}
 
-Other input.elements: \code{\link{actionButton}},
+Other input elements: \code{\link{actionButton}},
   \code{\link{checkboxGroupInput}},
   \code{\link{checkboxInput}}, \code{\link{dateInput}},
   \code{\link{fileInput}}, \code{\link{numericInput}},
@@ -131,4 +131,3 @@ Other input.elements: \code{\link{actionButton}},
   \code{\link{submitButton}}, \code{\link{textAreaInput}},
   \code{\link{textInput}}
 }
-

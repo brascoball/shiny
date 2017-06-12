@@ -25,6 +25,7 @@ equal parts (by default).
 \examples{
 ## Only run examples in interactive R sessions
 if (interactive()) {
+options(device.ask.default = FALSE)
 
 # Server code used for all examples
 server <- function(input, output) {
@@ -60,4 +61,3 @@ ui <- splitLayout(
 shinyApp(ui, server)
 }
 }
-
